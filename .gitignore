@@ -27,4 +27,4 @@ scripts/build_and_fab
 
 *.csv
 
-/env
+env/
