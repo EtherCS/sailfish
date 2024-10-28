@@ -68,7 +68,7 @@ class LocalBench:
                 keys += [Key.from_file(filename)]
 
             names = [x.name for x in keys]
-            committee = LocalCommittee(names, self.BASE_PORT, self.workers, self.bench_parameters.faults)
+            committee = LocalCommittee(names, self.BASE_PORT, self.workers, self.node_parameters.json['node_types'], self.bench_parameters.faults)
             committee.print(PathMaker.committee_file())
 
             self.node_parameters.print(PathMaker.parameters_file())
@@ -90,29 +90,36 @@ class LocalBench:
 
             # Run the primaries (except the faulty ones).
             for i, address in enumerate(committee.primary_addresses(self.faults)):
-                cmd = CommandMaker.run_primary(
-                    PathMaker.key_file(i),
-                    PathMaker.committee_file(),
-                    PathMaker.db_path(i),
-                    PathMaker.parameters_file(),
-                    debug=debug
-                )
-                log_file = PathMaker.primary_log_file(i)
-                self._background_run(cmd, log_file)
+                node_type = self.node_parameters.json['node_types'][i]
+                if node_type != 1:  # Crashed node
+                    cmd = CommandMaker.run_primary(
+                        PathMaker.key_file(i),
+                        PathMaker.committee_file(),
+                        PathMaker.db_path(i),
+                        PathMaker.parameters_file(),
+                        debug=debug
+                    )
+                    log_file = PathMaker.primary_log_file(i)
+                    self._background_run(cmd, log_file)
 
             # Run the workers (except the faulty ones).
             for i, addresses in enumerate(workers_addresses):
+                node_type = self.node_parameters.json['node_types'][i]
+                if node_type == 1:  # Crashed node
+                    continue
+
                 for (id, address) in addresses:
-                    cmd = CommandMaker.run_worker(
-                        PathMaker.key_file(i),
-                        PathMaker.committee_file(),
-                        PathMaker.db_path(i, id),
-                        PathMaker.parameters_file(),
-                        id,  # The worker's id.
-                        debug=debug
-                    )
-                    log_file = PathMaker.worker_log_file(i, id)
-                    self._background_run(cmd, log_file)
+                    if node_type != 1:  # Crashed node
+                        cmd = CommandMaker.run_worker(
+                            PathMaker.key_file(i),
+                            PathMaker.committee_file(),
+                            PathMaker.db_path(i, id),
+                            PathMaker.parameters_file(),
+                            id,  # The worker's id.
+                            debug=debug
+                        )
+                        log_file = PathMaker.worker_log_file(i, id)
+                        self._background_run(cmd, log_file)
 
             # Wait for all transactions to be processed.
             Print.info(f'Running benchmark ({self.duration} sec)...')

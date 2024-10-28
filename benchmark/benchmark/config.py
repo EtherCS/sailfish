@@ -45,9 +45,9 @@ class Committee:
     def __init__(self, json):
         self.json = json
 
-    def address_list_to_json(addresses, base_port, faults):
+    def address_list_to_json(addresses, base_port, node_types, faults):
         ''' The `addresses` field looks as follows:
-            { 
+            {
                 "name": ["host", "host", ...],
                 ...
             }
@@ -92,11 +92,13 @@ class Committee:
 
             json['authorities'][name] = {
                 # Corresponds to the determination of faulty nodes in primary_addresses.
-                'is_honest': i < num_authorities - faults,
+                # 'is_honest': i < num_authorities - faults,
+                'is_honest': node_types[i] == 0,
                 'stake': 1,
                 'consensus': consensus_addr,
                 'primary': primary_addr,
-                'workers': workers_addr
+                'workers': workers_addr,
+                'type': node_types[i]
             }
         return json
 
@@ -123,6 +125,7 @@ class Committee:
             for id, worker in authority['workers'].items():
                 authority_addresses += [(id, worker['transactions'])]
             addresses.append(authority_addresses)
+
         return addresses
 
     def ips(self, name=None):
@@ -181,13 +184,13 @@ class Committee:
 
 
 class LocalCommittee(Committee):
-    def __init__(self, names, port, workers, faults):
+    def __init__(self, names, port, workers, node_types, faults):
         assert isinstance(names, list)
         assert all(isinstance(x, str) for x in names)
         assert isinstance(port, int)
         assert isinstance(workers, int) and workers > 0
         addresses = OrderedDict((x, ['127.0.0.1']*(1+workers)) for x in names)
-        json = Committee.address_list_to_json(addresses, port, faults)
+        json = Committee.address_list_to_json(addresses, port, node_types, faults)
         super().__init__(json)
 
 
@@ -202,10 +205,15 @@ class NodeParameters:
             inputs += [json['sync_retry_nodes']]
             inputs += [json['batch_size']]
             inputs += [json['max_batch_delay']]
+            inputs += [json['node_types']]
         except KeyError as e:
             raise ConfigError(f'Malformed parameters: missing key {e}')
 
-        if not all(isinstance(x, int) for x in inputs):
+        if not all(isinstance(x, int) for x in inputs[:-1]):
+            raise ConfigError('Invalid parameters type')
+
+        #  Check if the node_types is a list
+        if not isinstance(inputs[-1], list):
             raise ConfigError('Invalid parameters type')
 
         self.json = json
