@@ -97,6 +97,7 @@ class LocalBench:
                         PathMaker.committee_file(),
                         PathMaker.db_path(i),
                         PathMaker.parameters_file(),
+                        _type=node_type,
                         debug=debug
                     )
                     log_file = PathMaker.primary_log_file(i)
@@ -105,9 +106,6 @@ class LocalBench:
             # Run the workers (except the faulty ones).
             for i, addresses in enumerate(workers_addresses):
                 node_type = self.node_parameters.json['node_types'][i]
-                if node_type == 1:  # Crashed node
-                    continue
-
                 for (id, address) in addresses:
                     if node_type != 1:  # Crashed node
                         cmd = CommandMaker.run_worker(
@@ -116,6 +114,7 @@ class LocalBench:
                             PathMaker.db_path(i, id),
                             PathMaker.parameters_file(),
                             id,  # The worker's id.
+                            _type=node_type,
                             debug=debug
                         )
                         log_file = PathMaker.worker_log_file(i, id)
@@ -128,7 +127,7 @@ class LocalBench:
 
             # Parse logs and return the parser.
             Print.info('Parsing logs...')
-            return LogParser.process(PathMaker.logs_path(), self.bench_parameters.burst, faults=self.faults, )
+            return LogParser.process(PathMaker.logs_path(), self.bench_parameters.burst, faults=self.faults)
 
         except (subprocess.SubprocessError, ParseError) as e:
             self._kill_nodes()
