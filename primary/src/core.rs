@@ -2,7 +2,7 @@
 use crate::aggregators::{CertificatesAggregator, NoVoteAggregator, TimeoutAggregator, VotesAggregator};
 use crate::error::{DagError, DagResult};
 use crate::messages::{Certificate, Header, NoVoteCert, NoVoteMsg, Timeout, TimeoutCert, Vote};
-use crate::primary::{PrimaryMessage, Round};
+use crate::primary::{PrimaryMessage, Round, NodeType};
 use crate::synchronizer::Synchronizer;
 use async_recursion::async_recursion;
 use bytes::Bytes;
@@ -81,7 +81,7 @@ pub struct Core {
     /// Aggregates no vote messages to use for sending no vote certificates.
     no_vote_aggregators: HashMap<Round, Box<NoVoteAggregator>>,
     /// Weather this node is an attacker or not.
-    attacker: bool, //*
+    node_type: NodeType, //*
 }
 
 impl Core {
@@ -105,8 +105,9 @@ impl Core {
         tx_timeout_cert: Sender<(TimeoutCert, Round)>,
         tx_no_vote_cert: Sender<(NoVoteCert, Round)>,
         tx_consensus_header: Sender<Header>,
-        attacker: bool,
+        node_type: NodeType,
     ) {
+
         tokio::spawn(async move {
             Self {
                 name,
@@ -137,7 +138,7 @@ impl Core {
                 cancel_handlers: HashMap::with_capacity(2 * gc_depth as usize),
                 timeouts_aggregators: HashMap::with_capacity(2 * gc_depth as usize),
                 no_vote_aggregators: HashMap::with_capacity(2 * gc_depth as usize),
-                attacker, //*
+                node_type, //*
             }
             .run()
             .await;
@@ -531,9 +532,6 @@ impl Core {
             let result = tokio::select! {
                 // We receive here messages from other primaries.
                 Some(message) = self.rx_primaries.recv() => {
-                    if self.attacker { //*
-                        continue;
-                    }
                     match message {
                         PrimaryMessage::Header(header) => {
                             match self.sanitize_header(&header) {
@@ -574,44 +572,19 @@ impl Core {
 
                 // We receive here loopback headers from the `HeaderWaiter`. Those are headers for which we interrupted
                 // execution (we were missing some of their dependencies) and we are now ready to resume processing.
-                Some(header) = self.rx_header_waiter.recv() => {
-                    if self.attacker {
-                        continue;
-                    }
-                    self.process_header(&header).await
-                } 
+                Some(header) = self.rx_header_waiter.recv() => self.process_header(&header).await,
 
                 // We receive here loopback certificates from the `CertificateWaiter`. Those are certificates for which
                 // we interrupted execution (we were missing some of their ancestors) and we are now ready to resume
                 // processing.
-                Some(certificate) = self.rx_certificate_waiter.recv() => {
-                    if self.attacker {
-                        continue;
-                    }
-                    self.process_certificate(certificate).await
-                },
+                Some(certificate) = self.rx_certificate_waiter.recv() => self.process_certificate(certificate).await,
 
                 // We also receive here our new headers created by the `Proposer`.
-                Some(header) = self.rx_proposer.recv() => {
-                    if self.attacker {
-                        continue;
-                    }
-                    self.process_own_header(header).await
-                },
+                Some(header) = self.rx_proposer.recv() => self.process_own_header(header).await,
                 // We also receive here our timeout created by the `Proposer`.
-                Some(timeout) = self.rx_timeout.recv() => {
-                    if self.attacker {
-                        continue;
-                    }
-                    self.process_own_timeout(timeout).await
-                },
+                Some(timeout) = self.rx_timeout.recv() => self.process_own_timeout(timeout).await,
                 // We also receive here our no vote messages created by the `Proposer`.
-                Some(no_vote_msg) = self.rx_no_vote_msg.recv() => {
-                    if self.attacker {
-                        continue;
-                    }
-                    self.process_own_no_vote_msg(no_vote_msg).await
-                },
+                Some(no_vote_msg) = self.rx_no_vote_msg.recv() => self.process_own_no_vote_msg(no_vote_msg).await,
             };
             match result {
                 Ok(()) => (),

@@ -94,7 +94,7 @@ async fn run(matches: &ArgMatches<'_>) -> Result<()> {
     // Channels the sequence of certificates.
     let (tx_output, rx_output) = channel(CHANNEL_CAPACITY);
 
-    let attacker = node_type == "2";
+    info!("Running a node of type {}", node_type);
 
     // Check whether to run a primary, a worker, or an entire authority.
     match matches.subcommand() {
@@ -111,7 +111,7 @@ async fn run(matches: &ArgMatches<'_>) -> Result<()> {
                 /* tx_consensus */ tx_new_certificates,
                 /* rx_consensus */ rx_feedback,
                 tx_consensus_header,
-                attacker,
+                node_type.parse::<u8>().unwrap(),
             );
             Consensus::spawn(
                 committee,

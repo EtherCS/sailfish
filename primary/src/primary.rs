@@ -57,6 +57,11 @@ pub enum WorkerPrimaryMessage {
     OthersBatch(Digest, WorkerId),
 }
 
+pub enum NodeType {
+    Honest,
+    Attacker,
+}
+
 pub struct Primary;
 
 impl Primary {
@@ -68,7 +73,7 @@ impl Primary {
         tx_consensus: Sender<Certificate>,
         rx_consensus: Receiver<Certificate>,
         tx_consensus_header: Sender<Header>,
-        attacker: bool,
+        type_: u8,
     ) {
         let (tx_others_digests, rx_others_digests) = channel(CHANNEL_CAPACITY);
         let (tx_our_digests, rx_our_digests) = channel(CHANNEL_CAPACITY);
@@ -147,9 +152,12 @@ impl Primary {
         let signature_service = SignatureService::new(secret);
 
         // The `Core` receives and handles headers, votes, and certificates from the other primaries.
-        if attacker {
-            info!("Primary {} is an attacker", name);
-        }
+        let node_type = match type_ {
+            0 => NodeType::Honest,
+            2 => NodeType::Attacker,
+            _ => panic!("Invalid node type"),
+        };
+
         Core::spawn(
             name,
             committee.clone(),
@@ -169,7 +177,7 @@ impl Primary {
             tx_timeout_cert,
             tx_no_vote_cert,
             tx_consensus_header,
-            attacker,
+            node_type,
         );
 
         // Keeps track of the latest consensus round and allows other tasks to clean up their their internal state
