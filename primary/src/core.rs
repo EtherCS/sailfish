@@ -2,14 +2,14 @@
 use crate::aggregators::{CertificatesAggregator, NoVoteAggregator, TimeoutAggregator, VotesAggregator};
 use crate::error::{DagError, DagResult};
 use crate::messages::{Certificate, Header, NoVoteCert, NoVoteMsg, Timeout, TimeoutCert, Vote};
-use crate::primary::{PrimaryMessage, Round, NodeType};
+use crate::primary::{PrimaryMessage, NodeType, Round};
 use crate::synchronizer::Synchronizer;
 use async_recursion::async_recursion;
 use bytes::Bytes;
 use config::Committee;
 use crypto::Hash as _;
 use crypto::{Digest, PublicKey, SignatureService};
-use log::{debug, error, warn};
+use log::{debug, error, warn, info};
 use network::{CancelHandler, ReliableSender};
 use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -580,7 +580,21 @@ impl Core {
                 Some(certificate) = self.rx_certificate_waiter.recv() => self.process_certificate(certificate).await,
 
                 // We also receive here our new headers created by the `Proposer`.
-                Some(header) = self.rx_proposer.recv() => self.process_own_header(header).await,
+                Some(header) = self.rx_proposer.recv() =>{
+                    // Process the header based on the node type. If the leader is an attacker it will not send the header.
+                    match self.node_type {
+                        NodeType::Honest => self.process_own_header(header).await,
+                        NodeType::Attacker => {
+                            let leader = self.committee.leader(header.round as usize);
+                            if leader.eq(&self.name) {
+                                info!("Attacker node {} is not sending the header when it's the leader", self.name);
+                                continue;
+                            }  
+                            self.process_own_header(header).await
+                        },
+                    }
+                },
+                 
                 // We also receive here our timeout created by the `Proposer`.
                 Some(timeout) = self.rx_timeout.recv() => self.process_own_timeout(timeout).await,
                 // We also receive here our no vote messages created by the `Proposer`.
