@@ -254,6 +254,12 @@ impl Committee {
     }
 }
 
+#[derive(Clone)]
+pub enum NodeType {
+    Honest,
+    Attacker,
+}
+
 #[derive(Serialize, Deserialize)]
 pub struct KeyPair {
     /// The node's public key (and identifier).
