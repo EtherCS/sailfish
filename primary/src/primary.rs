@@ -11,7 +11,7 @@ use crate::proposer::Proposer;
 use crate::synchronizer::Synchronizer;
 use async_trait::async_trait;
 use bytes::Bytes;
-use config::{Committee, KeyPair, Parameters, WorkerId};
+use config::{Committee, KeyPair, Parameters, NodeType, WorkerId};
 use crypto::{Digest, PublicKey, SignatureService};
 use futures::sink::SinkExt as _;
 use log::info;
@@ -55,11 +55,6 @@ pub enum WorkerPrimaryMessage {
     OurBatch(Digest, WorkerId),
     /// The worker indicates it received a batch's digest from another authority.
     OthersBatch(Digest, WorkerId),
-}
-
-pub enum NodeType {
-    Honest,
-    Attacker,
 }
 
 pub struct Primary;
@@ -177,7 +172,7 @@ impl Primary {
             tx_timeout_cert,
             tx_no_vote_cert,
             tx_consensus_header,
-            node_type,
+            node_type.clone(),
         );
 
         // Keeps track of the latest consensus round and allows other tasks to clean up their their internal state
@@ -224,6 +219,7 @@ impl Primary {
             rx_timeout_cert,
             tx_no_vote_msg,
             rx_no_vote_cert,
+            node_type.clone(),
         );
 
         // The `Helper` is dedicated to reply to certificates requests from other primaries.

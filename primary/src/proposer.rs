@@ -1,7 +1,7 @@
 // Copyright(C) Facebook, Inc. and its affiliates.
 use crate::messages::{Certificate, Header, NoVoteCert, NoVoteMsg, Timeout, TimeoutCert};
 use crate::primary::Round;
-use config::{Committee, WorkerId};
+use config::{Committee, NodeType, WorkerId};
 use crypto::Hash as _;
 use crypto::{Digest, PublicKey, SignatureService};
 #[cfg(feature = "benchmark")]
@@ -57,6 +57,8 @@ pub struct Proposer {
     last_timeout_cert: TimeoutCert,
     /// Holds the latest No Vote Certificate received.
     last_no_vote_cert: NoVoteCert,
+    /// Type of the node is running this proposer.
+    node_type: NodeType,
 }
 
 impl Proposer {
@@ -74,6 +76,7 @@ impl Proposer {
         rx_timeout_cert: Receiver<(TimeoutCert, Round)>,
         tx_core_no_vote_msg: Sender<NoVoteMsg>,
         rx_no_vote_cert: Receiver<(NoVoteCert, Round)>,
+        node_type: NodeType,
     ) {
         let genesis = Certificate::genesis(&committee);
         tokio::spawn(async move {
@@ -97,6 +100,7 @@ impl Proposer {
                 payload_size: 0,
                 last_timeout_cert: TimeoutCert:: new(0),
                 last_no_vote_cert: NoVoteCert:: new(0),
+                node_type,
             }
             .run()
             .await;
@@ -190,6 +194,13 @@ impl Proposer {
 
         self.last_leader.is_some()
     }
+    
+    // Unlink the last leader from the parents.
+    fn remove_last_leader(&mut self) {
+        let leader_name = self.committee.leader(self.round as usize);
+        debug!("Removing leader {} from the parents in the attacker node {}", leader_name, self.name);
+        self.last_parents.retain(|x| x.origin() != leader_name);
+    }
 
     /// Main loop listening to incoming messages.
     pub async fn run(&mut self) {
@@ -265,6 +276,18 @@ impl Proposer {
                     // TODO: (1) Implement the wait for NVC if leader logic here
                     // (2) Also implement the wait for leader idea what is was there before
                     advance = self.update_leader();
+
+                    if advance {
+                        debug!("Round {} is ready to advance, has the leader", self.round);
+                        match self.node_type {
+                            NodeType::Honest => (),
+                            NodeType::Attacker => {
+                                // If we are an attacker, we don't link with the last leader block.
+                                self.remove_last_leader();
+                                advance = false;
+                            }
+                        }
+                    }
                 }
                 Some((digest, worker_id)) = self.rx_workers.recv() => {
                     self.payload_size += digest.size();
