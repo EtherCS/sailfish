@@ -583,13 +583,18 @@ impl Core {
                 Some(header) = self.rx_proposer.recv() =>{
                     // Process the header based on the node type. If the leader is an attacker it will not send the header.
                     match self.node_type {
-                        NodeType::Honest => self.process_own_header(header).await,
+                        NodeType::Honest => {
+                            info!("Broadcasting proposal header {}", header);
+                            self.process_own_header(header).await
+                        },
                         NodeType::Attacker => {
                             let leader = self.committee.leader(header.round as usize);
                             if leader.eq(&self.name) {
-                                info!("Attacker node {} is not sending the header when it's the leader", self.name);
+                                info!("Attacker leader node {} is not sending the header in round {}", self.name, header.round);
+                                debug!("The header: {}", header);
                                 continue;
-                            }  
+                            }
+                            info!("Broadcasting proposal header {}", header);  
                             self.process_own_header(header).await
                         },
                     }

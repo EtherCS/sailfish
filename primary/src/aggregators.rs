@@ -3,6 +3,7 @@ use crate::error::{DagError, DagResult};
 use crate::messages::{Certificate, Header, Timeout, TimeoutCert, Vote, NoVoteMsg, NoVoteCert};
 use config::{Committee, Stake};
 use crypto::{PublicKey, Signature};
+use log::info;
 use std::collections::HashSet;
 
 /// Aggregates votes for a particular header into a certificate.

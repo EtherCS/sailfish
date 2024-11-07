@@ -5,8 +5,7 @@ use config::{Committee, NodeType, WorkerId};
 use crypto::Hash as _;
 use crypto::{Digest, PublicKey, SignatureService};
 #[cfg(feature = "benchmark")]
-use log::info;
-use log::{debug, warn};
+use log::{debug, info, warn};
 use std::cmp::Ordering;
 use tokio::sync::mpsc::{Receiver, Sender};
 use tokio::time::{sleep, Duration, Instant};
@@ -169,7 +168,7 @@ impl Proposer {
         #[cfg(feature = "benchmark")]
         for digest in header.payload.keys() {
             // NOTE: This log entry is used to compute performance.
-            info!("Created {} -> {:?}", header, digest);
+            // info!("Created {} -> {:?}", header, digest);
         }
 
         // Send the new header to the `Core` that will broadcast and process it.
@@ -240,6 +239,8 @@ impl Proposer {
                 // Advance to the next round.
                 self.round += 1;
                 debug!("Dag moved to round {}", self.round);
+                info!("New leader is {}", self.committee.leader(self.round as usize));
+                info!("I'm node {}", self.name);
 
                 // Make a new header.
                 self.make_header().await;
@@ -278,7 +279,7 @@ impl Proposer {
                     advance = self.update_leader();
 
                     if advance {
-                        debug!("Round {} is ready to advance, has the leader", self.round);
+                        info!("Round {} is ready to advance, has the leader", self.round);
                         match self.node_type {
                             NodeType::Honest => (),
                             NodeType::Attacker => {
