@@ -37,10 +37,10 @@ impl VotesAggregator {
         self.weight += committee.stake(&author);
 
         //to check if we have received vote from the current round leader
-        let leader = committee.leader(vote.round as usize);
-        if !self.used.contains(&leader){
-            return Ok(None);
-        }
+        // let leader = committee.leader(vote.round as usize);
+        // if !self.used.contains(&leader){
+        //     return Ok(None);
+        // }
         
         if self.weight >= committee.quorum_threshold() {
             self.weight = 0; // Ensures quorum is only reached once.
