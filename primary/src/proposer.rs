@@ -168,7 +168,7 @@ impl Proposer {
         #[cfg(feature = "benchmark")]
         for digest in header.payload.keys() {
             // NOTE: This log entry is used to compute performance.
-            // info!("Created {} -> {:?}", header, digest);
+            info!("Created {} -> {:?}", header, digest);
         }
 
         // Send the new header to the `Core` that will broadcast and process it.
@@ -194,11 +194,16 @@ impl Proposer {
         self.last_leader.is_some()
     }
     
-    // Unlink the last leader from the parents.
-    fn remove_last_leader(&mut self) {
+    // Check that the leader is not in the parents of an attacker node.
+    fn check_leader(&mut self) -> bool {
         let leader_name = self.committee.leader(self.round as usize);
-        debug!("Removing leader {} from the parents in the attacker node {}", leader_name, self.name);
-        self.last_parents.retain(|x| x.origin() != leader_name);
+        let leader: Option<Certificate> = self
+            .last_parents
+            .iter()
+            .find(|x| x.origin() == leader_name)
+            .cloned();
+        
+        leader.is_some()
     }
 
     /// Main loop listening to incoming messages.
@@ -254,6 +259,7 @@ impl Proposer {
 
             tokio::select! {
                 Some((parents, round)) = self.rx_core.recv() => {
+                    info!("Received parents for round {}", round);
                     // Compare the parents' round number with our current round.
                     match round.cmp(&self.round) {
                         Ordering::Greater => {
@@ -276,16 +282,30 @@ impl Proposer {
                     // we ignore this check and advance anyway.
                     // TODO: (1) Implement the wait for NVC if leader logic here
                     // (2) Also implement the wait for leader idea what is was there before
-                    advance = self.update_leader();
+                    
+                    // advance = self.update_leader();
+                    //
+                    // if advance {
+                    //     info!("Round {} is ready to advance, has the leader", self.round);
+                    //     match self.node_type {
+                    //         NodeType::Honest => (),
+                    //         NodeType::Attacker => {
+                    //             if self.check_leader() {
+                    //                 warn!("Leader is in the parents of an attacker node");
+                    //             }
+                    //         }
+                    //     }
+                    // }
 
-                    if advance {
-                        info!("Round {} is ready to advance, has the leader", self.round);
-                        match self.node_type {
-                            NodeType::Honest => (),
-                            NodeType::Attacker => {
-                                // If we are an attacker, we don't link with the last leader block.
-                                self.remove_last_leader();
-                                advance = false;
+                    advance = match self.node_type {
+                        NodeType::Honest => self.update_leader(),
+                        NodeType::Attacker => {
+                            if self.check_leader() {
+                                warn!("Leader is in the parents of an attacker node");
+                                false
+                            } else {
+                                info!("Round {} is ready to advance", self.round);
+                                true
                             }
                         }
                     }

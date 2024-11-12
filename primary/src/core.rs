@@ -435,6 +435,20 @@ impl Core {
         let bytes = bincode::serialize(&certificate).expect("Failed to serialize certificate");
         self.store.write(certificate.digest().to_vec(), bytes).await;
 
+        info!("Processing certificate {}", certificate.origin());
+        // Ensuring attacker node does not link with the leader node of the previous round.
+        match self.node_type {
+            NodeType::Honest => (),
+            NodeType::Attacker => {
+                let leader = self.committee.leader(certificate.round() as usize);
+                info!("Leader of round {} is {}", certificate.round(), leader);
+                if leader.eq(&certificate.origin()) {
+                    info!("Attacker is not adding the certificate of the leader node of round {}", certificate.round());
+                    return Ok(());
+                }
+            },
+        }
+
         // Check if we have enough certificates to enter a new dag round and propose a header.
         if let Some(parents) = self
             .certificates_aggregators

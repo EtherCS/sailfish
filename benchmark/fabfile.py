@@ -14,11 +14,11 @@ def local(ctx, debug=True):
     ''' Run benchmarks on localhost '''
     bench_params = {
         'faults': 0,
-        'nodes': 7,
+        'nodes': 4,
         'workers': 1,
         'rate': 50_000,
         'tx_size': 512,
-        'duration': 60,
+        'duration': 20,
         "burst": 10
     }
     node_params = {
@@ -29,7 +29,7 @@ def local(ctx, debug=True):
         'sync_retry_nodes': 3,  # number of nodes
         'batch_size': 50_000,  # bytes
         'max_batch_delay': 200,  # ms
-        'node_types': [0, 0, 0, 0, 0, 2, 2]  # 0: honest, 1: crash, 2: attack
+        'node_types': [0, 0, 0, 2]  # 0: honest, 1: crash, 2: attack
     }
     try:
         ret = LocalBench(bench_params, node_params).run(debug)
