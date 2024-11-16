@@ -91,7 +91,7 @@ struct Client {
 
 impl Client {
     pub async fn send(&self) -> Result<()> {
-        const PRECISION: u64 = 20; // Sample precision.
+        // const PRECISION: u64 = 20; // Sample precision.
         info!("Burst duration {:?}", self.burst_duration);
 
         // The transaction size must be at least 16 bytes to ensure all txs are different.
