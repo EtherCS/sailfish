@@ -3,8 +3,47 @@ use crate::error::{DagError, DagResult};
 use crate::messages::{Certificate, Header, Timeout, TimeoutCert, Vote, NoVoteMsg, NoVoteCert};
 use config::{Committee, Stake};
 use crypto::{PublicKey, Signature};
-use log::info;
 use std::collections::HashSet;
+
+/// Aggregates a header for a particular attacker node.
+pub struct HeadersAggregator {
+    weight: Stake,
+    headers: Vec<Header>,
+    used: HashSet<PublicKey>,
+}
+
+impl HeadersAggregator {
+    pub fn new() -> Self {
+        Self {
+            weight: 0,
+            headers: Vec::new(),
+            used: HashSet::new(),
+        }
+    }
+
+    pub fn append(
+        &mut self,
+        header: Header,
+        committee: &Committee,
+    ) -> DagResult<Option<Vec<Header>>> {
+        let author = header.author;
+
+        // Ensure it is the first time this authority sends a header.
+        ensure!(self.used.insert(author), DagError::AuthorityReuse(author));
+
+        self.headers.push(header);
+        self.weight += committee.stake(&author);
+        
+        if self.weight >= committee.attackers_threshold() {
+            self.weight = 0;
+            self.used.clear();
+            // Once quorum is reached, you might reset for the next round or use the certification as needed.
+            return Ok(Some(self.headers.drain(..).collect()));
+        }
+        Ok(None)
+        
+    }
+}
 
 /// Aggregates votes for a particular header into a certificate.
 pub struct VotesAggregator {
