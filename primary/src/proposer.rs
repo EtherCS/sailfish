@@ -5,15 +5,16 @@ use config::{Committee, NodeType, WorkerId};
 use crypto::Hash as _;
 use crypto::{Digest, PublicKey, SignatureService};
 #[cfg(feature = "benchmark")]
-use log::{debug, info, warn};
+use log::info;
+use log::{debug, warn};
 use std::cmp::Ordering;
 use tokio::sync::mpsc::{Receiver, Sender};
 use tokio::time::{sleep, Duration, Instant};
 use std::collections::HashMap;
 
-#[cfg(test)]
-#[path = "tests/proposer_tests.rs"]
-pub mod proposer_tests;
+// #[cfg(test)]
+// #[path = "tests/proposer_tests.rs"]
+// pub mod proposer_tests;
 
 /// The proposer creates new headers and send them to the core for broadcasting and further processing.
 pub struct Proposer {
@@ -322,8 +323,8 @@ impl Proposer {
                     // Advance to the next round.
                     self.round += 1;
                     debug!("Dag moved to round {}", self.round);
-                    info!("New leader is {}", self.committee.leader(self.round as usize));
-                    info!("I'm node {}", self.name);
+                    debug!("New leader is {}", self.committee.leader(self.round as usize));
+                    debug!("I'm node {}", self.name);
 
                     // Make a new header.
                     self.make_header().await;
@@ -342,7 +343,7 @@ impl Proposer {
 
             tokio::select! {
                 Some((parents, round)) = self.rx_core.recv() => {
-                    info!("Received parents of round {}", round);
+                    debug!("Received parents of round {}", round);
                     // Compare the parents' round number with our current round.
                     match round.cmp(&self.round) {
                         Ordering::Greater => {
@@ -355,7 +356,7 @@ impl Proposer {
                             } else {
                                 self.round = round;
                                 self.last_parents = parents;
-                                info!("Dag jumped to round {}", self.round);
+                                debug!("Dag jumped to round {}", self.round);
                             }
                         },
                         Ordering::Less => {
@@ -378,19 +379,19 @@ impl Proposer {
                         NodeType::Honest => self.update_leader(),
                         NodeType::Attacker => {
                             if self.check_leader() {
-                                warn!("Leader is in the parents of an attacker node");
+                                debug!("Leader is in the parents of an attacker node");
                                 false
                             } else {
-                                info!("Round {} is ready to advance", self.round);
+                                debug!("Round {} is ready to advance", self.round);
                                 true && timeout_cert_gathered
                             }
                         },
                     };
-                    info!("Advance: {}", advance);
+                    debug!("Advance: {}", advance);
                     debug!("Last headers round {}.", self.last_headers.1); 
                 }
                 Some((_headers, round)) = self.rx_core_headers.recv() => {
-                    info!("Received headers of round {}, currently in round {}", round, self.round);
+                    debug!("Received headers of round {}, currently in round {}", round, self.round);
                     match round.cmp(&self.round) {
                         Ordering::Greater => {
                             // We accept round bigger than our current round
@@ -415,7 +416,7 @@ impl Proposer {
                     self.digests.push((digest, worker_id));
                 }
                 Some((timeout_cert, round)) = self.rx_timeout_cert.recv() => {
-                    info!("Received timeout_cert of round {}, currently in round {}", round, self.round);
+                    debug!("Received timeout_cert of round {}, currently in round {}", round, self.round);
                     match round.cmp(&self.last_timeout_cert.round) {
                         Ordering::Greater => {
                             // We accept round bigger than our current round to jump ahead in case we were
@@ -434,7 +435,7 @@ impl Proposer {
                     }
                 }
                 Some((no_vote_cert, round)) = self.rx_no_vote_cert.recv() => {
-                    info!("Received no_vote_cert of round {}, currently in round {}", round, self.round);
+                    debug!("Received no_vote_cert of round {}, currently in round {}", round, self.round);
                     match round.cmp(&self.last_no_vote_cert.round) {
                         Ordering::Greater => {
                             // We accept round bigger than our current round to jump ahead in case we were

@@ -342,7 +342,7 @@ impl TimeoutCert {
         
         // For debugging
         if weight < committee.quorum_threshold() {
-            debug!("Timeouts don´t meet quorum: {}/{}", weight, committee.quorum_threshold());
+            debug!("Timeouts don't meet quorum: {}/{}", weight, committee.quorum_threshold());
         }
         // Check if the accumulated weight meets the quorum threshold.
         ensure!(

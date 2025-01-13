@@ -13,12 +13,12 @@ from benchmark.plot import Ploter, PlotError
 def local(ctx, debug=True):
     ''' Run benchmarks on localhost '''
     bench_params = {
-        'faults': 0,
+        'faults': 1,
         'nodes': 7,
         'workers': 1,
         'rate': 50_000,
         'tx_size': 512,
-        'duration': 60,
+        'duration': 30,
         "burst": 10
     }
     node_params = {
