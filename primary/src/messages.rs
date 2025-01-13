@@ -9,6 +9,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::convert::TryInto;
 use std::fmt;
+use log::debug;
 
 #[derive(Clone, Serialize, Deserialize, Default)]
 pub struct Header {
@@ -338,7 +339,11 @@ impl TimeoutCert {
             used.insert(*name);
             weight += voting_rights;
         }
-
+        
+        // For debugging
+        if weight < committee.quorum_threshold() {
+            debug!("Timeouts don´t meet quorum: {}/{}", weight, committee.quorum_threshold());
+        }
         // Check if the accumulated weight meets the quorum threshold.
         ensure!(
             weight >= committee.quorum_threshold(),
@@ -384,6 +389,10 @@ impl NoVoteCert {
             weight += voting_rights;
         }
 
+        // For debugging
+        if weight < committee.quorum_threshold() {
+            debug!("NoVotes don´t meet quorum: {}/{}", weight, committee.quorum_threshold());
+        }
         ensure!(
             weight >= committee.quorum_threshold(),
             DagError::CertificateRequiresQuorum

@@ -9,6 +9,7 @@ use log::{debug, info, warn};
 use std::cmp::Ordering;
 use tokio::sync::mpsc::{Receiver, Sender};
 use tokio::time::{sleep, Duration, Instant};
+use std::collections::HashMap;
 
 #[cfg(test)]
 #[path = "tests/proposer_tests.rs"]
@@ -62,6 +63,10 @@ pub struct Proposer {
     last_headers: (Vec<Header>, Round),
     /// Saves the timeout_certs that it receives.
     last_timeout_certs: Vec<TimeoutCert>,
+    /// Saves all the parents that it receives.
+    parents: HashMap<Round, Vec<Certificate>>,
+    /// Saves all the headers that it receives.
+    headers: HashMap<Round, Vec<Header>>,
     /// Type of the node is running this proposer.
     node_type: NodeType,
 }
@@ -109,6 +114,8 @@ impl Proposer {
                 last_no_vote_cert: NoVoteCert:: new(0),
                 last_headers: (Vec::new(), 0),
                 last_timeout_certs: Vec::new(),
+                parents: HashMap::new(),
+                headers: HashMap::new(),
                 node_type,
             }
             .run()
@@ -216,6 +223,33 @@ impl Proposer {
         leader.is_some()
     }
 
+    fn add_or_extend_parents(&mut self, parents: Vec<Certificate>, round: Round) {
+        self.parents
+            .entry(round)
+            .or_insert_with(Vec::new)
+            .extend(parents);
+    }
+
+    fn update_parents(&mut self) {
+        if let Some(parents) = self.parents.remove(&self.round) {
+            self.last_parents = parents;
+        }
+    }
+
+    fn add_headers(&mut self, headers: Vec<Header>, round: Round) {
+        self.headers
+            .entry(round)
+            .or_insert_with(Vec::new)
+            .extend(headers);
+    }
+
+    fn update_headers(&mut self) {
+        if let Some(headers) = self.headers.remove(&(self.round + 1)) {
+            self.last_headers.0 = headers;
+            self.last_headers.1 = self.round + 1;
+        }
+    }
+
     fn add_timeout_cert(&mut self, timeout_cert: TimeoutCert) -> TimeoutCert {
         if let Some(pos) = self.last_timeout_certs.iter().position(|x| x.round == timeout_cert.round) {
             self.last_timeout_certs[pos] = timeout_cert.clone();
@@ -293,6 +327,8 @@ impl Proposer {
 
                     // Make a new header.
                     self.make_header().await;
+                    self.update_parents();
+                    self.update_headers();
                     self.update_timeout_certs();
                     self.payload_size = 0;
 
@@ -312,9 +348,15 @@ impl Proposer {
                         Ordering::Greater => {
                             // We accept round bigger than our current round to jump ahead in case we were
                             // late (or just joined the network).
-                            self.round = round;
-                            self.last_parents = parents;
-                            info!("Dag jumped to round {}", self.round);
+
+                            if !has_headers {
+                                // Attacker node should not jump ahead.
+                                self.add_or_extend_parents(parents, round);
+                            } else {
+                                self.round = round;
+                                self.last_parents = parents;
+                                info!("Dag jumped to round {}", self.round);
+                            }
                         },
                         Ordering::Less => {
                             // Ignore parents from older rounds.
@@ -344,14 +386,19 @@ impl Proposer {
                             }
                         },
                     };
-                    info!("Advance: {}", advance); 
+                    info!("Advance: {}", advance);
+                    debug!("Last headers round {}.", self.last_headers.1); 
                 }
                 Some((_headers, round)) = self.rx_core_headers.recv() => {
                     info!("Received headers of round {}, currently in round {}", round, self.round);
                     match round.cmp(&self.round) {
                         Ordering::Greater => {
                             // We accept round bigger than our current round
-                            self.last_headers = (_headers, round);
+                            if self.round + 1 == round {
+                                self.last_headers = (_headers, round);
+                            } else {
+                                self.add_headers(_headers, round);
+                            }
                         },
                         Ordering::Less => {
                             // Ignore parents from older rounds.

@@ -620,8 +620,10 @@ impl Core {
 
                 // We receive here loopback headers from the `HeaderWaiter`. Those are headers for which we interrupted
                 // execution (we were missing some of their dependencies) and we are now ready to resume processing.
-                Some(header) = self.rx_header_waiter.recv() => self.process_header(&header).await,
-
+                Some(header) = self.rx_header_waiter.recv() => {
+                    debug!("Resuming processing of {:?}", header);
+                    self.process_header(&header).await
+                },
                 // We receive here loopback certificates from the `CertificateWaiter`. Those are certificates for which
                 // we interrupted execution (we were missing some of their ancestors) and we are now ready to resume
                 // processing.
