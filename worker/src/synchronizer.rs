@@ -109,7 +109,6 @@ impl Synchronizer {
                 // Handle primary's messages.
                 Some(message) = self.rx_message.recv() => match message {
                     PrimaryWorkerMessage::Synchronize(digests, target) => {
-                        debug!("Received a sync request from the primary for {} batches. The target: {}", digests.len(), target);
                         let now = SystemTime::now()
                             .duration_since(UNIX_EPOCH)
                             .expect("Failed to measure time")
@@ -129,7 +128,6 @@ impl Synchronizer {
                                     debug!("Requesting sync for batch {}", digest);
                                 },
                                 Ok(Some(_)) => {
-                                    debug!("Already have the batch {}", digest);
                                     // The batch arrived in the meantime: no need to request it.
                                 },
                                 Err(e) => {

@@ -18,18 +18,18 @@ def local(ctx, debug=True):
         'workers': 1,
         'rate': 50_000,
         'tx_size': 512,
-        'duration': 30,
+        'duration': 60,
         "burst": 10
     }
     node_params = {
-        'header_size': 1,  # bytes
+        'header_size': 1_000,  # bytes
         'max_header_delay': 0,  # ms
         'gc_depth': 50,  # rounds
         'sync_retry_delay': 10_000,  # ms
         'sync_retry_nodes': 3,  # number of nodes
         'batch_size': 50_000,  # bytes
         'max_batch_delay': 200,  # ms
-        'node_types': [0, 0, 0, 0, 2, 2, 2]  # 0: honest, 1: crash, 2: attack
+        'node_types': [0, 0, 0, 0, 2, 2, 1]  # 0: honest, 1: crash, 2: attack
     }
     try:
         ret = LocalBench(bench_params, node_params).run(debug)

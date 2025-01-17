@@ -130,6 +130,7 @@ impl HeaderWaiter {
                     match message {
                         WaiterMessage::SyncBatches(missing, header) => {
                             debug!("Synching the payload of {}", header);
+
                             let header_id = header.id.clone();
                             let round = header.round;
                             let author = header.author;
@@ -148,6 +149,8 @@ impl HeaderWaiter {
                                     (key.to_vec(), self.store.clone())
                                 })
                                 .collect();
+
+
                             let (tx_cancel, rx_cancel) = channel(1);
                             self.pending.insert(header_id, (round, tx_cancel));
                             let fut = Self::waiter(wait_for, header, rx_cancel);
@@ -162,6 +165,7 @@ impl HeaderWaiter {
                                 });
                             }
                             for (worker_id, digests) in requires_sync {
+                                
                                 let address = self.committee
                                     .worker(&author, &worker_id)
                                     .expect("Author of valid header is not in the committee")
