@@ -68,7 +68,7 @@ class LocalBench:
                 keys += [Key.from_file(filename)]
 
             names = [x.name for x in keys]
-            committee = LocalCommittee(names, self.BASE_PORT, self.workers, self.bench_parameters.faults)
+            committee = LocalCommittee(names, self.BASE_PORT, self.workers, self.node_parameters.json['node_types'], self.bench_parameters.faults)
             committee.print(PathMaker.committee_file())
 
             self.node_parameters.print(PathMaker.parameters_file())
@@ -90,11 +90,13 @@ class LocalBench:
 
             # Run the primaries (except the faulty ones).
             for i, address in enumerate(committee.primary_addresses(self.faults)):
+                node_type = self.node_parameters.json['node_types'][i]
                 cmd = CommandMaker.run_primary(
                     PathMaker.key_file(i),
                     PathMaker.committee_file(),
                     PathMaker.db_path(i),
                     PathMaker.parameters_file(),
+                    _type=node_type,
                     debug=debug
                 )
                 log_file = PathMaker.primary_log_file(i)
@@ -102,6 +104,7 @@ class LocalBench:
 
             # Run the workers (except the faulty ones).
             for i, addresses in enumerate(workers_addresses):
+                node_type = self.node_parameters.json['node_types'][i]
                 for (id, address) in addresses:
                     cmd = CommandMaker.run_worker(
                         PathMaker.key_file(i),
@@ -109,6 +112,7 @@ class LocalBench:
                         PathMaker.db_path(i, id),
                         PathMaker.parameters_file(),
                         id,  # The worker's id.
+                        _type=node_type,
                         debug=debug
                     )
                     log_file = PathMaker.worker_log_file(i, id)
@@ -121,7 +125,7 @@ class LocalBench:
 
             # Parse logs and return the parser.
             Print.info('Parsing logs...')
-            return LogParser.process(PathMaker.logs_path(), self.bench_parameters.burst, faults=self.faults, )
+            return LogParser.process(PathMaker.logs_path(), self.bench_parameters.burst, faults=self.faults)
 
         except (subprocess.SubprocessError, ParseError) as e:
             self._kill_nodes()

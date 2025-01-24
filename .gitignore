@@ -26,3 +26,5 @@ workspace.xml
 scripts/build_and_fab
 
 *.csv
+
+env/

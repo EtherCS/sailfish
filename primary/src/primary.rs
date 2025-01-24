@@ -11,7 +11,7 @@ use crate::proposer::Proposer;
 use crate::synchronizer::Synchronizer;
 use async_trait::async_trait;
 use bytes::Bytes;
-use config::{Committee, KeyPair, Parameters, WorkerId};
+use config::{Committee, KeyPair, Parameters, NodeType, WorkerId};
 use crypto::{Digest, PublicKey, SignatureService};
 use futures::sink::SinkExt as _;
 use log::info;
@@ -68,6 +68,7 @@ impl Primary {
         tx_consensus: Sender<Certificate>,
         rx_consensus: Receiver<Certificate>,
         tx_consensus_header: Sender<Header>,
+        type_: u8,
     ) {
         let (tx_others_digests, rx_others_digests) = channel(CHANNEL_CAPACITY);
         let (tx_our_digests, rx_our_digests) = channel(CHANNEL_CAPACITY);
@@ -83,7 +84,7 @@ impl Primary {
         let (tx_certificates_loopback, rx_certificates_loopback) = channel(CHANNEL_CAPACITY);
         let (tx_primary_messages, rx_primary_messages) = channel(CHANNEL_CAPACITY);
         let (tx_cert_requests, rx_cert_requests) = channel(CHANNEL_CAPACITY);
-
+        let (tx_headers_attacker, rx_headers_attacker) = channel(CHANNEL_CAPACITY);
         // Write the parameters to the logs.
         parameters.log();
 
@@ -146,6 +147,12 @@ impl Primary {
         let signature_service = SignatureService::new(secret);
 
         // The `Core` receives and handles headers, votes, and certificates from the other primaries.
+        let node_type = match type_ {
+            0 => NodeType::Honest,
+            2 => NodeType::Attacker,
+            _ => panic!("Invalid node type"),
+        };
+
         Core::spawn(
             name,
             committee.clone(),
@@ -162,9 +169,11 @@ impl Primary {
             rx_no_vote_msg,
             tx_consensus,
             /* tx_proposer */ tx_parents,
+            tx_headers_attacker,
             tx_timeout_cert,
             tx_no_vote_cert,
             tx_consensus_header,
+            node_type.clone(),
         );
 
         // Keeps track of the latest consensus round and allows other tasks to clean up their their internal state
@@ -211,6 +220,8 @@ impl Primary {
             rx_timeout_cert,
             tx_no_vote_msg,
             rx_no_vote_cert,
+            /* rx_core_headers*/rx_headers_attacker,
+            node_type.clone(),
         );
 
         // The `Helper` is dedicated to reply to certificates requests from other primaries.
