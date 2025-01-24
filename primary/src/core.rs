@@ -1,5 +1,5 @@
 // Copyright(C) Facebook, Inc. and its affiliates.
-use crate::aggregators::{HeadersAggregator, CertificatesAggregator, NoVoteAggregator, TimeoutAggregator, VotesAggregator};
+use crate::aggregators::{AttackerCertificateAggregator, CertificatesAggregator, NoVoteAggregator, TimeoutAggregator, VotesAggregator};
 use crate::error::{DagError, DagResult};
 use crate::messages::{Certificate, Header, NoVoteCert, NoVoteMsg, Timeout, TimeoutCert, Vote};
 use crate::primary::{PrimaryMessage, Round};
@@ -53,8 +53,8 @@ pub struct Core {
     tx_consensus: Sender<Certificate>,
     /// Send valid a quorum of certificates' ids to the `Proposer` (along with their round).
     tx_proposer: Sender<(Vec<Certificate>, Round)>,
-    /// Send f + 2 headers to the Proposer.
-    tx_proposer_headers: Sender<(Vec<Header>, Round)>,
+    /// Send f + 2 certificates to the Proposer.
+    tx_proposer_certificates: Sender<(Vec<Certificate>, Round)>,
     /// Send a valid TimeoutCertificate along with the round to the `Proposer`.
     tx_timeout_cert: Sender<(TimeoutCert, Round)>,
     /// Send a valid NoVoteCert along with the round to the `Proposer`.
@@ -70,8 +70,8 @@ pub struct Core {
     processing: HashMap<Round, HashSet<Digest>>,
     /// The last header we proposed (for which we are waiting votes).
     current_header: Header,
-    /// Aggregates headers to use for attacker node to propose new header.
-    headers_aggregators: HashMap<Round, Box<HeadersAggregator>>,
+    /// Aggregates certificates to use for attacker node to propose new header.
+    attacker_certificate_aggregators: HashMap<Round, Box<AttackerCertificateAggregator>>,
     /// Aggregates votes into a certificate.
     votes_aggregator: VotesAggregator,
     /// Aggregates certificates to use as parents for new headers.
@@ -106,7 +106,7 @@ impl Core {
         rx_no_vote_msg: Receiver<NoVoteMsg>,
         tx_consensus: Sender<Certificate>,
         tx_proposer: Sender<(Vec<Certificate>, Round)>,
-        tx_proposer_headers: Sender<(Vec<Header>, Round)>,
+        tx_proposer_certificates: Sender<(Vec<Certificate>, Round)>,
         tx_timeout_cert: Sender<(TimeoutCert, Round)>,
         tx_no_vote_cert: Sender<(NoVoteCert, Round)>,
         tx_consensus_header: Sender<Header>,
@@ -130,7 +130,7 @@ impl Core {
                 rx_no_vote_msg,
                 tx_consensus,
                 tx_proposer,
-                tx_proposer_headers,
+                tx_proposer_certificates,
                 tx_timeout_cert,
                 tx_no_vote_cert,
                 tx_consensus_header,
@@ -138,7 +138,7 @@ impl Core {
                 last_voted: HashMap::with_capacity(2 * gc_depth as usize),
                 processing: HashMap::with_capacity(2 * gc_depth as usize),
                 current_header: Header::default(),
-                headers_aggregators: HashMap::with_capacity(2 * gc_depth as usize),
+                attacker_certificate_aggregators: HashMap::with_capacity(2 * gc_depth as usize),
                 votes_aggregator: VotesAggregator::new(),
                 certificates_aggregators: HashMap::with_capacity(2 * gc_depth as usize),
                 network: ReliableSender::new(),
@@ -233,8 +233,7 @@ impl Core {
 
     #[async_recursion]
     async fn process_header(&mut self, header: &Header) -> DagResult<()> {
-        // debug!("Processing {:?}", header);
-        info!("Processing header {} of round {}", header.author, header.round);
+        debug!("Processing {:?}", header);
         // Send header to consensus
         self.tx_consensus_header.send(header.clone())
             .await
@@ -287,26 +286,6 @@ impl Core {
         // Store the header.
         let bytes = bincode::serialize(header).expect("Failed to serialize header");
         self.store.write(header.id.to_vec(), bytes).await;
-
-        match self.node_type {
-            NodeType::Honest => (),
-            NodeType::Attacker => {
-                if let Some(headers) = self
-                    .headers_aggregators
-                    .entry(header.round)
-                    .or_insert_with(|| Box::new(HeadersAggregator::new()))
-                    .append(header.clone(), &self.committee)?
-                {
-                    // Tell proposer that we have enough headers to propose a new header.
-                    info!("Attacker node has received f + 2 blocks from the round {}", header.round);
-                    self.tx_proposer_headers
-                        .send((headers, header.round))
-                        .await
-                        .expect("Failed to send headers to the proposer");
-                }
-            }
-        }
-        info!("Adding header {} of round {}", header.author, header.round);
 
         // Check if we can vote for this header.
         if self
@@ -381,8 +360,6 @@ impl Core {
             self.no_vote_aggregators.insert(no_vote_msg.round, Box::new(aggregator));
         }
 
-        info!("Processing no vote message {} of round {}", no_vote_msg.author, no_vote_msg.round);
-
         // Check if we have no vote messages to create a no vote cert to propose next header(as a leader).
         if let Some(no_vote_cert) = self
             .no_vote_aggregators
@@ -402,8 +379,7 @@ impl Core {
 
     #[async_recursion]
     async fn process_vote(&mut self, vote: Vote) -> DagResult<()> {
-        // debug!("Processing {:?}", vote);
-        info!("Processing vote {} of round {}", vote.origin, vote.round);
+        debug!("Processing {:?}", vote);
 
         // Add it to the votes' aggregator and try to make a new certificate.
         if let Some(certificate) =
@@ -437,8 +413,7 @@ impl Core {
 
     #[async_recursion]
     async fn process_certificate(&mut self, certificate: Certificate) -> DagResult<()> {
-        //debug!("Processing {:?}", certificate);
-        info!("Processing certificate {} of round {}", certificate.origin(), certificate.round());
+        debug!("Processing {:?}", certificate);
 
         // Process the header embedded in the certificate if we haven't already voted for it (if we already
         // voted, it means we already processed it). Since this header got certified, we are sure that all
@@ -472,16 +447,27 @@ impl Core {
         match self.node_type {
             NodeType::Honest => (),
             NodeType::Attacker => {
+                if let Some(certificates) = self
+                    .attacker_certificate_aggregators
+                    .entry(certificate.round())
+                    .or_insert_with(|| Box::new(AttackerCertificateAggregator::new()))
+                    .append(certificate.clone(), &self.committee)?
+                {
+                    // Send it to the `Proposer`.
+                    self.tx_proposer_certificates
+                        .send((certificates, certificate.round()))
+                        .await
+                        .expect("Failed to send certificates");
+                }
+
                 let leader = self.committee.leader(certificate.round() as usize);
-                info!("Leader of round {} is {}", certificate.round(), leader);
                 if leader.eq(&certificate.origin()) {
                     info!("Attacker is not adding the certificate of the leader node of round {}", certificate.round());
                     return Ok(());
                 }
+
             }
         }
-
-        info!("Adding certificate {} of round {}", certificate.origin(), certificate.round());
 
         // Check if we have enough certificates to enter a new dag round and propose a header.
         if let Some(parents) = self
@@ -620,10 +606,8 @@ impl Core {
 
                 // We receive here loopback headers from the `HeaderWaiter`. Those are headers for which we interrupted
                 // execution (we were missing some of their dependencies) and we are now ready to resume processing.
-                Some(header) = self.rx_header_waiter.recv() => {
-                    debug!("Resuming processing of {:?}", header);
-                    self.process_header(&header).await
-                },
+                Some(header) = self.rx_header_waiter.recv() => self.process_header(&header).await,
+
                 // We receive here loopback certificates from the `CertificateWaiter`. Those are certificates for which
                 // we interrupted execution (we were missing some of their ancestors) and we are now ready to resume
                 // processing.
@@ -633,18 +617,13 @@ impl Core {
                 Some(header) = self.rx_proposer.recv() =>{
                     // Process the header based on the node type. If the leader is an attacker it will not send the header.
                     match self.node_type {
-                        NodeType::Honest => {
-                            info!("Broadcasting proposal header {}", header);
-                            self.process_own_header(header).await
-                        },
+                        NodeType::Honest => self.process_own_header(header).await,
                         NodeType::Attacker => {
                             let leader = self.committee.leader(header.round as usize);
                             if leader.eq(&self.name) {
-                                info!("Attacker leader node {} is not sending the header in round {}", self.name, header.round);
-                                debug!("The header: {}", header);
+                                // The attacker leader node does not send the header.
                                 continue;
                             }
-                            info!("Broadcasting proposal header {}", header);  
                             self.process_own_header(header).await
                         },
                     }
@@ -672,7 +651,7 @@ impl Core {
                 self.last_voted.retain(|k, _| k >= &gc_round);
                 self.processing.retain(|k, _| k >= &gc_round);
                 self.certificates_aggregators.retain(|k, _| k >= &gc_round);
-                self.headers_aggregators.retain(|k, _| k >= &gc_round);
+                self.attacker_certificate_aggregators.retain(|k, _| k >= &gc_round);
                 self.cancel_handlers.retain(|k, _| k >= &gc_round);
                 self.gc_round = gc_round;
             }

@@ -84,7 +84,7 @@ impl Primary {
         let (tx_certificates_loopback, rx_certificates_loopback) = channel(CHANNEL_CAPACITY);
         let (tx_primary_messages, rx_primary_messages) = channel(CHANNEL_CAPACITY);
         let (tx_cert_requests, rx_cert_requests) = channel(CHANNEL_CAPACITY);
-        let (tx_headers_attacker, rx_headers_attacker) = channel(CHANNEL_CAPACITY);
+        let (tx_certificates_attacker, rx_certificates_attacker) = channel(CHANNEL_CAPACITY);
         // Write the parameters to the logs.
         parameters.log();
 
@@ -169,7 +169,7 @@ impl Primary {
             rx_no_vote_msg,
             tx_consensus,
             /* tx_proposer */ tx_parents,
-            tx_headers_attacker,
+            tx_certificates_attacker,
             tx_timeout_cert,
             tx_no_vote_cert,
             tx_consensus_header,
@@ -220,7 +220,7 @@ impl Primary {
             rx_timeout_cert,
             tx_no_vote_msg,
             rx_no_vote_cert,
-            /* rx_core_headers*/rx_headers_attacker,
+            /* rx_core_certificates*/rx_certificates_attacker,
             node_type.clone(),
         );
 

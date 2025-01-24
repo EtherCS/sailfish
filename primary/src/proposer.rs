@@ -44,7 +44,7 @@ pub struct Proposer {
     /// Receives no vote certs from the `Core`.
     rx_no_vote_cert: Receiver<(NoVoteCert, Round)>,
     /// Receives the f + 2 headers from the `Core`.
-    rx_core_headers: Receiver<(Vec<Header>, Round)>,
+    rx_core_certificates: Receiver<(Vec<Certificate>, Round)>,
 
     /// The current round of the dag.
     round: Round,
@@ -60,14 +60,14 @@ pub struct Proposer {
     last_timeout_cert: TimeoutCert,
     /// Holds the latest No Vote Certificate received.
     last_no_vote_cert: NoVoteCert,
-    /// Holds the last headers received.
-    last_headers: (Vec<Header>, Round),
+    /// Holds the last certificates that he needs for the current round.
+    last_certificates: (Vec<Certificate>, Round),
     /// Saves the timeout_certs that it receives.
     last_timeout_certs: Vec<TimeoutCert>,
     /// Saves all the parents that it receives.
     parents: HashMap<Round, Vec<Certificate>>,
-    /// Saves all the headers that it receives.
-    headers: HashMap<Round, Vec<Header>>,
+    /// Saves all the certificates that it receives.
+    certificates: HashMap<Round, Vec<Certificate>>,
     /// Type of the node is running this proposer.
     node_type: NodeType,
 }
@@ -87,7 +87,7 @@ impl Proposer {
         rx_timeout_cert: Receiver<(TimeoutCert, Round)>,
         tx_core_no_vote_msg: Sender<NoVoteMsg>,
         rx_no_vote_cert: Receiver<(NoVoteCert, Round)>,
-        rx_core_headers: Receiver<(Vec<Header>, Round)>,
+        rx_core_certificates: Receiver<(Vec<Certificate>, Round)>,
         node_type: NodeType,
     ) {
         let genesis = Certificate::genesis(&committee);
@@ -105,7 +105,7 @@ impl Proposer {
                 rx_timeout_cert,
                 tx_core_no_vote_msg,
                 rx_no_vote_cert,
-                rx_core_headers,
+                rx_core_certificates,
                 round: 0,
                 last_parents: genesis,
                 last_leader: None,
@@ -113,10 +113,10 @@ impl Proposer {
                 payload_size: 0,
                 last_timeout_cert: TimeoutCert:: new(0),
                 last_no_vote_cert: NoVoteCert:: new(0),
-                last_headers: (Vec::new(), 0),
+                last_certificates: (Vec::new(), 0),
                 last_timeout_certs: Vec::new(),
                 parents: HashMap::new(),
-                headers: HashMap::new(),
+                certificates: HashMap::new(),
                 node_type,
             }
             .run()
@@ -237,17 +237,17 @@ impl Proposer {
         }
     }
 
-    fn add_headers(&mut self, headers: Vec<Header>, round: Round) {
-        self.headers
+    fn add_certificates(&mut self, certificates_: Vec<Certificate>, round: Round) {
+        self.certificates
             .entry(round)
             .or_insert_with(Vec::new)
-            .extend(headers);
+            .extend(certificates_);
     }
 
-    fn update_headers(&mut self) {
-        if let Some(headers) = self.headers.remove(&(self.round + 1)) {
-            self.last_headers.0 = headers;
-            self.last_headers.1 = self.round + 1;
+    fn update_certificates(&mut self) {
+        if let Some(certificates_) = self.certificates.remove(&(self.round + 1)) {
+            self.last_certificates.0 = certificates_;
+            self.last_certificates.1 = self.round + 1;
         }
     }
 
@@ -298,10 +298,10 @@ impl Proposer {
             let no_vote_cert_gathered = self.last_no_vote_cert.round == self.round;
             let enough_digests = self.payload_size >= self.header_size;
             let timer_expired = timer.is_elapsed();
-            let has_headers = match self.node_type {
+            let has_certificates = match self.node_type {
                 NodeType::Honest => true,
                 NodeType::Attacker => {
-                    self.last_headers.1 == self.round + 1
+                    self.last_certificates.1 == self.round + 1
                 }
             };
 
@@ -319,17 +319,15 @@ impl Proposer {
                     no_vote_sent = true;
                 }
 
-                if has_headers {
+                if has_certificates {
                     // Advance to the next round.
                     self.round += 1;
                     debug!("Dag moved to round {}", self.round);
-                    debug!("New leader is {}", self.committee.leader(self.round as usize));
-                    debug!("I'm node {}", self.name);
 
                     // Make a new header.
                     self.make_header().await;
                     self.update_parents();
-                    self.update_headers();
+                    self.update_certificates();
                     self.update_timeout_certs();
                     self.payload_size = 0;
 
@@ -343,20 +341,22 @@ impl Proposer {
 
             tokio::select! {
                 Some((parents, round)) = self.rx_core.recv() => {
-                    debug!("Received parents of round {}", round);
                     // Compare the parents' round number with our current round.
                     match round.cmp(&self.round) {
                         Ordering::Greater => {
                             // We accept round bigger than our current round to jump ahead in case we were
                             // late (or just joined the network).
-
-                            if !has_headers {
-                                // Attacker node should not jump ahead.
-                                self.add_or_extend_parents(parents, round);
-                            } else {
-                                self.round = round;
-                                self.last_parents = parents;
-                                debug!("Dag jumped to round {}", self.round);
+                            
+                            match self.node_type {
+                                NodeType::Honest => {
+                                    self.round = round;
+                                    self.last_parents = parents;
+                                    debug!("Dag jumped to round {}", self.round);
+                                },
+                                NodeType::Attacker => {
+                                    // Attacker node should not jump ahead.
+                                    self.add_or_extend_parents(parents, round);
+                                }
                             }
                         },
                         Ordering::Less => {
@@ -382,23 +382,19 @@ impl Proposer {
                                 debug!("Leader is in the parents of an attacker node");
                                 false
                             } else {
-                                debug!("Round {} is ready to advance", self.round);
                                 true && timeout_cert_gathered
                             }
                         },
                     };
-                    debug!("Advance: {}", advance);
-                    debug!("Last headers round {}.", self.last_headers.1); 
                 }
-                Some((_headers, round)) = self.rx_core_headers.recv() => {
-                    debug!("Received headers of round {}, currently in round {}", round, self.round);
+                Some((_certificates, round)) = self.rx_core_certificates.recv() => {
                     match round.cmp(&self.round) {
                         Ordering::Greater => {
                             // We accept round bigger than our current round
                             if self.round + 1 == round {
-                                self.last_headers = (_headers, round);
+                                self.last_certificates = (_certificates, round);
                             } else {
-                                self.add_headers(_headers, round);
+                                self.add_certificates(_certificates, round);
                             }
                         },
                         Ordering::Less => {
@@ -416,7 +412,6 @@ impl Proposer {
                     self.digests.push((digest, worker_id));
                 }
                 Some((timeout_cert, round)) = self.rx_timeout_cert.recv() => {
-                    debug!("Received timeout_cert of round {}, currently in round {}", round, self.round);
                     match round.cmp(&self.last_timeout_cert.round) {
                         Ordering::Greater => {
                             // We accept round bigger than our current round to jump ahead in case we were
@@ -435,7 +430,6 @@ impl Proposer {
                     }
                 }
                 Some((no_vote_cert, round)) = self.rx_no_vote_cert.recv() => {
-                    debug!("Received no_vote_cert of round {}, currently in round {}", round, self.round);
                     match round.cmp(&self.last_no_vote_cert.round) {
                         Ordering::Greater => {
                             // We accept round bigger than our current round to jump ahead in case we were

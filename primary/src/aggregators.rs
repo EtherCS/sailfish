@@ -5,40 +5,40 @@ use config::{Committee, Stake};
 use crypto::{PublicKey, Signature};
 use std::collections::HashSet;
 
-/// Aggregates a header for a particular attacker node.
-pub struct HeadersAggregator {
+/// Aggregates a Certificate for a particular attacker node.
+pub struct AttackerCertificateAggregator {
     weight: Stake,
-    headers: Vec<Header>,
+    certificates: Vec<Certificate>,
     used: HashSet<PublicKey>,
 }
 
-impl HeadersAggregator {
+impl AttackerCertificateAggregator {
     pub fn new() -> Self {
         Self {
             weight: 0,
-            headers: Vec::new(),
+            certificates: Vec::new(),
             used: HashSet::new(),
         }
     }
 
     pub fn append(
         &mut self,
-        header: Header,
+        certificate: Certificate,
         committee: &Committee,
-    ) -> DagResult<Option<Vec<Header>>> {
-        let author = header.author;
+    ) -> DagResult<Option<Vec<Certificate>>> {
+        let author = certificate.origin();
 
-        // Ensure it is the first time this authority sends a header.
+        // Ensure it is the first time this authority sends a certificate.
         ensure!(self.used.insert(author), DagError::AuthorityReuse(author));
 
-        self.headers.push(header);
+        self.certificates.push(certificate);
         self.weight += committee.stake(&author);
         
         if self.weight >= committee.attackers_threshold() {
             self.weight = 0;
             self.used.clear();
             // Once quorum is reached, you might reset for the next round or use the certification as needed.
-            return Ok(Some(self.headers.drain(..).collect()));
+            return Ok(Some(self.certificates.drain(..).collect()));
         }
         Ok(None)
         
