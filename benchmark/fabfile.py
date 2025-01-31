@@ -5,20 +5,20 @@ from benchmark.local import LocalBench
 from benchmark.logs import ParseError, LogParser
 from benchmark.utils import Print, BenchError
 from benchmark.plot import Ploter, PlotError
-# from benchmark.instance import InstanceManager
-# from benchmark.remote import Bench, BenchError
+from benchmark.instance import InstanceManager
+from benchmark.remote import Bench, BenchError
 
 
 @task
 def local(ctx, debug=True):
     ''' Run benchmarks on localhost '''
     bench_params = {
-        'faults': 0,
-        'nodes': 4,
+        'faults': 2,
+        'nodes': 10,
         'workers': 1,
         'rate': 50_000,
         'tx_size': 512,
-        'duration': 20,
+        'duration': 60,
         "burst" : 10
     }
     node_params = {
@@ -50,16 +50,16 @@ def create(ctx, nodes=1):
 def destroy(ctx):
     ''' Destroy the testbed '''
     try:
-        InstanceManager.make().delete_instances()
+        InstanceManager.make().terminate_instances()
     except BenchError as e:
         Print.error(e)
 
 
 @task
-def start(ctx):
+def start(ctx, max=2):
     ''' Start at most `max` machines per data center '''
     try:
-        InstanceManager.make().start_instances()
+        InstanceManager.make().start_instances(max)
     except BenchError as e:
         Print.error(e)
 
@@ -96,12 +96,12 @@ def remote(ctx, burst = 50, debug=False):
     ''' Run benchmarks on GCP '''
     bench_params = {
         'faults': 0,
-        'nodes': 10,
+        'nodes': 4,
         'workers': 1,
-        'collocate': True,
-        'rate': [50000],
+        # 'collocate': True,
+        'rate': [500],
         'tx_size': 512,
-        'duration': 180,
+        'duration': 120,
         'runs': 1,
         'burst' : [burst],
     } 
