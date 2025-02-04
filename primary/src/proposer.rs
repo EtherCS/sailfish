@@ -262,7 +262,7 @@ impl Proposer {
         if self.round >= timeout_cert.round {
             timeout_cert
         } else {
-            self.last_timeout_certs.iter().find(|x| x.round == self.round).unwrap().clone()
+            self.last_timeout_certs.iter().find(|x| x.round == self.round).cloned().unwrap_or_else(|| TimeoutCert::new(0))
         }
     }
 

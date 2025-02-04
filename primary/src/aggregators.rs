@@ -1,9 +1,40 @@
 // Copyright(C) Facebook, Inc. and its affiliates.
 use crate::error::{DagError, DagResult};
-use crate::messages::{Certificate, Header, Timeout, TimeoutCert, Vote, NoVoteMsg, NoVoteCert};
+use crate::messages::{Certificate, Header, NoVoteCert, NoVoteMsg, Timeout, TimeoutCert, Vote};
 use config::{Committee, Stake};
 use crypto::{PublicKey, Signature};
 use std::collections::HashSet;
+
+/// Aggregates a state for the votes of a header (fixed sailfish committing issue)
+pub struct HeaderStakeAggregator {
+    weight: Stake,
+    votes: Vec<Header>,
+    used: HashSet<PublicKey>,
+}
+
+impl HeaderStakeAggregator {
+    pub fn new() -> Self {
+        Self {
+            weight: 0,
+            votes: Vec::new(),
+            used: HashSet::new(),
+        }
+    }
+
+    pub fn append(&mut self, header: Header, committee: &Committee) {
+        let author = header.author;
+
+        // Ensure it is the first time this authority votes.
+        if self.used.insert(author) {
+            self.votes.push(header);
+            self.weight += committee.stake(&author);
+        }
+    }
+
+    pub fn aggregated_stake(&self) -> Stake {
+        self.weight
+    }
+}
 
 /// Aggregates a Certificate for a particular attacker node.
 pub struct AttackerCertificateAggregator {
@@ -33,7 +64,7 @@ impl AttackerCertificateAggregator {
 
         self.certificates.push(certificate);
         self.weight += committee.stake(&author);
-        
+
         if self.weight >= committee.attackers_threshold() {
             self.weight = 0;
             self.used.clear();
@@ -41,7 +72,6 @@ impl AttackerCertificateAggregator {
             return Ok(Some(self.certificates.drain(..).collect()));
         }
         Ok(None)
-        
     }
 }
 
@@ -80,7 +110,7 @@ impl VotesAggregator {
         // if !self.used.contains(&leader){
         //     return Ok(None);
         // }
-        
+
         if self.weight >= committee.quorum_threshold() {
             self.weight = 0; // Ensures quorum is only reached once.
             return Ok(Some(Certificate {

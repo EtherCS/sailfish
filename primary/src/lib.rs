@@ -17,5 +17,6 @@ mod synchronizer;
 // #[path = "tests/common.rs"]
 // mod common;
 
+pub use crate::aggregators::{AttackerCertificateAggregator, HeaderStakeAggregator};
 pub use crate::messages::{Certificate, Header};
 pub use crate::primary::{Primary, PrimaryWorkerMessage, Round, WorkerPrimaryMessage};
